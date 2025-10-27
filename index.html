@@ -1,0 +1,417 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>To Ellisa</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Caveat:wght@400..700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --env-w: 360px;
+    --env-h: 240px;        /* envelope visual height */
+    --letter-mult: 3;      /* letter = 3x envelope height */
+    --bg: #f0e4c7;
+    --env: #e2ccb2;
+    --flap: #d6ac8b;
+    --soft-ms: 500ms;      /* flap soft open duration */
+    --peek-medium: 90px;   /* medium instant peek */
+  }
+
+html,body {
+    height: 100%;
+    margin: 0;
+
+    /* --- START: Background Image Code --- */
+    background-color: var(--bg); /* Fallback color if image fails */
+
+    /* Change 'my-background.jpg' to your image's filename */
+    background-image: url('ellie.jpg'); 
+
+    background-size: cover;       /* Cover the whole screen */
+    background-position: center;  /* Center the image */
+    background-repeat: no-repeat; /* Do not tile the image */
+    background-attachment: fixed; /* Keep it in place on scroll */
+    /* --- END: Background Image Code --- */
+
+    font-family: Arial, system-ui;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 10px;
+}
+
+  /* Envelope wrapper */
+  .envelope-wrap{
+    width: var(--env-w);
+    height: var(--env-h);
+    position:relative;
+    user-select:none;
+    -webkit-user-select:none;
+    touch-action: none; /* we'll manage touch behavior */
+  }
+
+  /* envelope back (bottom) */
+  .envelope-back{
+    position:absolute;inset:0;
+    background:var(--env);
+    border-radius:12px;
+    box-shadow:0 8px 30px rgba(0,0,0,0.12);
+    z-index:1;
+    transition: opacity var(--soft-ms) ease, transform .6s ease;
+  }
+
+  /* flap (behind letter visually) */
+  .envelope-flap{
+    position:absolute;left:0;right:0;top:0;
+    height:60%;
+    background:var(--flap);
+    clip-path: polygon(0 0, 100% 0, 50% 100%);
+    border-top-left-radius:12px;border-top-right-radius:12px;
+    transform-origin: top center;
+    z-index:2; /* behind letter (letter z=3) */
+    transition: transform var(--soft-ms) cubic-bezier(.2,.9,.35,1), opacity var(--soft-ms) ease;
+    will-change: transform;
+    box-shadow: 0 6px 18px rgba(0,0,0,0.08) inset;
+  }
+
+  /* letter (tall) — initially hidden (visibility:hidden) */
+  .letter{
+    position:absolute;
+    left:10px;
+    top:14px; /* tucked inside envelope initially */
+    width: calc(100% - 20px);
+    height: calc(var(--env-h) * var(--letter-mult)); /* 3x envelope height */
+    max-height: calc(var(--env-h) * var(--letter-mult));
+    background: #fff;
+    border-radius:6px;
+    padding:18px;
+    box-sizing:border-box;
+    font-family: "Caveat", cursive;
+    font-size:1.25rem;
+    line-height:1.45;
+    color:#222;
+    z-index:3; /* above flap */
+    transition: transform .18s linear;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch; /* smooth scrolling on iOS */
+    touch-action: none; /* we'll manage scroll vs pull in JS while pulling */
+    visibility: hidden; /* hidden at start */
+    opacity: 0;
+  }
+
+  /* when visible makes it visible; transform controlled via JS */
+  .letter.visible {
+    visibility: visible;
+    opacity: 1;
+  }
+
+  /* flap-open keeps flap visible but behind letter (z lower than letter) */
+  .envelope-flap.flap-open{
+    transform: rotateX(-180deg);
+    z-index:2; /* still behind letter */
+  }
+
+  /* hide scrollbars visually */
+  .letter::-webkit-scrollbar{ width: 0; height: 0; }
+  .letter { scrollbar-width: none; -ms-overflow-style: none; }
+
+  /* peek note */
+  .peek-note{
+    position:absolute;left:50%;bottom:10px;transform:translateX(-50%);font-size:13px;color:#666;opacity:.95;z-index:5;
+  }
+
+  .poem-line{opacity:0; animation:poemFade .5s ease forwards;}
+  @keyframes poemFade{from{opacity:0; transform:translateY(8px)} to {opacity:1; transform:none}}
+
+  @media (max-width:420px){
+    :root{--env-w:320px;--env-h:220px}
+    .letter{font-size:1.05rem;padding:16px}
+  }
+</style>
+</head>
+<body>
+  <div class="stage">
+    <div class="hint" id="hint"></div>
+
+    <div class="envelope-wrap" id="envWrap" role="group" aria-label="Envelope" tabindex="0">
+      <div class="envelope-back" id="envBack"></div>
+      <div class="envelope-flap" id="envFlap" aria-hidden="true"></div>
+
+      <!-- Long letter (3x envelope height) -->
+      <div class="letter" id="letter" role="article" aria-label="Letter content">
+        <!-- poem lines will be appended here -->
+      </div>
+
+      <div class="peek-note" id="peek"></div>
+    </div>
+
+    <div style="font-size:13px;color:#8a8a8a;max-width:480px;text-align:center">
+
+    </div>
+  </div>
+
+<script>
+/* ---------------- Content ---------------- */
+const poemLines = [
+  "to the girl whose birth flowers are chrysanthemum,",
+  "to the girl who sounds like taylor swift songs,",
+  "to the girl who i see green when i look at her,",
+  "to the girl who sounds like a literary when she talks,",
+  "to the girl who thinks with her empathetic heart,",
+  "to the girl who cries when someone cries,",
+  "to the girl who cares for everyone,",
+  "to the girl who takes care for her loved ones with no expectation of reciprocity,",
+  "to the girl who learned how to survive at young age, ",
+  "to the girl who saw everything when she was a little girl,",
+  "to the girl who endured it all,",
+  "to the girl who overcame all her challenges,",
+  "to the girl who's the definition of strong woman,",
+  "to the girl who became God's strongest soldier",
+  "to the girl i adore,",
+  "to the girl i think about all the time,",
+  "to the girl i wish my day always ends with her,",
+  "to the girl i wish to be with in every living seconds of my day,",
+  "to the girl i really like,",
+  "to the girl i love.",
+  "to ellisa,",
+  "you are my city of joy.",
+  "and i. would like you to be my partner in everything,",
+  "would you like to do experience life with me?",
+  "(be my girlfriend pls, and future wife.)"
+];
+
+/* ---------------- Elements ---------------- */
+const envWrap = document.getElementById('envWrap');
+const envFlap = document.getElementById('envFlap');
+const envBack = document.getElementById('envBack');
+const letter = document.getElementById('letter');
+const hint = document.getElementById('hint');
+const peek = document.getElementById('peek');
+
+/* state */
+let opened = false;        // flap opened (stays open)
+let pulling = false;       // currently pulling the paper
+let lastY = null;
+let translateY = 0;        // how many px the letter is pulled up (0 = fully tucked)
+let envRect = null;
+let letterRect = null;
+let addedLines = 0;
+
+/* thresholds (recomputed on interaction) */
+let partialPeekPx = 0;     // initial small peek amount (we will use medium ~90px)
+let fullPullPx = 0;        // px to be considered fully pulled (after which content scrolls)
+let maxPullPx = 0;        // maximum allowed pull (cap)
+
+/* helper: add a poem line */
+function showNextLine(){
+  if (addedLines < poemLines.length){
+    const p = document.createElement('p');
+    p.className = 'poem-line';
+    p.textContent = poemLines[addedLines++];
+    letter.appendChild(p);
+    // if pulled fully, scroll to bottom so new line is visible
+    setTimeout(()=> { if (translateY >= fullPullPx) letter.scrollTop = letter.scrollHeight; }, 20);
+  }
+}
+
+/* compute geometry */
+function computeGeometry(){
+  envRect = envWrap.getBoundingClientRect();
+  letterRect = letter.getBoundingClientRect();
+  // medium peek: ~ 90px or constrained if env height small
+  partialPeekPx = Math.min(parseInt(getComputedStyle(document.documentElement).getPropertyValue('--peek-medium')) || 90, envRect.height * 0.6);
+  // fullPullPx: we'll treat as 1.0 * env height (user pulls by one envelope height to reveal more)
+  fullPullPx = envRect.height * 1.0;
+  // max pull: don't allow dragging beyond letter length minus margin
+  maxPullPx = envRect.height * (parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--letter-mult')) - 0.4);
+}
+
+/* make letter visible immediately after flap opens and apply medium peek */
+function revealInstantPeek(){
+  // show the letter element
+  letter.classList.add('visible');
+  // ensure compute geometry is fresh
+  computeGeometry();
+  // set initial translate to the medium peek amount (but don't exceed max)
+  const peekToApply = Math.min(partialPeekPx, maxPullPx);
+  applyTranslate(peekToApply);
+  // show a few lines immediately so user sees content
+  showNextLine(); showNextLine();
+  // UI tweaks
+  peek.style.opacity = 0;
+
+}
+
+/* softly open flap and keep it open (UP, behind letter) */
+function openFlap(){
+  if (!opened){
+    envFlap.classList.add('flap-open');
+    opened = true;
+
+    // slightly fade the back so peek is clear
+    setTimeout(()=> { envBack.style.opacity = '0'; }, 160);
+
+    // once flap finishes opening (soft duration), instantly reveal peek
+    // use same duration as --soft-ms (500ms). Slightly delay so transform completes visually.
+    setTimeout(() => {
+      revealInstantPeek();
+    }, 520);
+  }
+}
+
+/* Apply translate to the letter (moves the paper up relative to its original place inside envelope) */
+function applyTranslate(y){
+  translateY = Math.max(0, Math.min(maxPullPx, y));
+  letter.style.transform = `translateY(${-translateY}px)`;
+  // when pulled some show a few lines
+  if (translateY > 8 && addedLines === 0) {
+    showNextLine();
+  }
+}
+
+/* Called when user begins touch */
+function onStart(point){
+  computeGeometry();
+  lastY = point.y;
+}
+
+/* Called when moving finger */
+function onMove(point, ev){
+  const dy = lastY - point.y; // positive when moving up
+  lastY = point.y;
+
+  // If not yet opened and user moved up a bit, open the flap softly
+  if (!opened && dy > 6) {
+    openFlap();
+  }
+
+  // If letter hasn't reached fullPullPx yet -> treat movement as pulling the paper
+  if (translateY < fullPullPx){
+    let newTranslate = translateY + dy;
+    if (newTranslate >= fullPullPx){
+      const overshoot = newTranslate - fullPullPx;
+      applyTranslate(fullPullPx);
+      if (overshoot > 0){
+        // apply remaining overshoot to content scroll
+        letter.scrollTop += overshoot * 1.0;
+      }
+    } else {
+      applyTranslate(newTranslate);
+    }
+    // prevent page scroll while pulling
+    ev.preventDefault && ev.preventDefault();
+    pulling = true;
+    return;
+  }
+
+  // At or beyond fullPullPx: movement should scroll content first
+  if (translateY >= fullPullPx){
+    if (dy > 0){
+      // moving up -> scroll down content
+      letter.scrollTop += dy;
+      ev.preventDefault && ev.preventDefault();
+      return;
+    } else if (dy < 0){
+      // moving down
+      const canScrollUp = letter.scrollTop > 0;
+      if (canScrollUp){
+        letter.scrollTop += dy; // dy negative -> reduce scrollTop
+        ev.preventDefault && ev.preventDefault();
+        return;
+      } else {
+        // content at top: start tucking paper back in
+        const newTranslate = Math.max(0, translateY + dy);
+        applyTranslate(newTranslate);
+        ev.preventDefault && ev.preventDefault();
+        return;
+      }
+    }
+  }
+}
+
+/* Called when touch ends */
+function onEnd(){
+  pulling = false;
+  lastY = null;
+
+  // small snap to zero for crispness if almost tucked
+  if (translateY < 4) applyTranslate(0);
+
+  if (translateY > 6) {
+    peek.style.opacity = 0;
+  } else {
+    peek.style.opacity = 0.9;
+  }
+}
+
+/* Touch event wiring */
+envWrap.addEventListener('touchstart', (ev) => {
+  const p = ev.touches && ev.touches[0];
+  if (!p) return;
+  onStart({x: p.clientX, y: p.clientY});
+}, {passive: true});
+
+/* touchmove must be non-passive so we can preventDefault while pulling */
+envWrap.addEventListener('touchmove', (ev) => {
+  const p = ev.touches && ev.touches[0];
+  if (!p) return;
+  onMove({x: p.clientX, y: p.clientY}, ev);
+}, {passive: false});
+
+/* touchend */
+envWrap.addEventListener('touchend', (ev) => {
+  onEnd();
+}, {passive: true});
+
+/* Desktop fallback (mouse) */
+let mouseDown = false;
+envWrap.addEventListener('mousedown', (ev) => {
+  mouseDown = true;
+  onStart({x: ev.clientX, y: ev.clientY});
+  function onMoveDoc(me){
+    onMove({x: me.clientX, y: me.clientY}, me);
+  }
+  function onUpDoc(){
+    mouseDown = false;
+    onEnd();
+    document.removeEventListener('mousemove', onMoveDoc);
+    document.removeEventListener('mouseup', onUpDoc);
+  }
+  document.addEventListener('mousemove', onMoveDoc);
+  document.addEventListener('mouseup', onUpDoc);
+});
+
+/* keyboard accessibility */
+envWrap.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' || e.key === ' ') {
+    e.preventDefault();
+    if (!opened){
+      openFlap();
+      // small auto peek for keyboard users after flap animation
+      setTimeout(()=> { computeGeometry(); revealInstantPeek(); }, 520);
+    } else {
+      showNextLine();
+    }
+  }
+});
+
+/* click on letter when pulled to append lines */
+letter.addEventListener('click', (e) => {
+  if (translateY > 6) showNextLine();
+});
+
+/* Prevent page from bouncing when interacting with env on some browsers */
+document.body.addEventListener('touchmove', function(ev){
+  if (pulling || translateY > 0) {
+    ev.preventDefault && ev.preventDefault();
+  }
+}, {passive: false});
+
+/* small initial content so the letter looks non-empty once it peeks */
+showNextLine(); showNextLine();
+
+</script>
+</body>
+</html>
